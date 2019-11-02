@@ -6,6 +6,7 @@ from Baseline import Baeseline, evaluate_auc
 import RFunctions as RF
 from TreeCriteria import TreeCriteria
 from sklearn.linear_model import LogisticRegression
+import argparse
 
 class Node(object):
     '''
@@ -298,37 +299,40 @@ def print_tree(root, df_test, attr_label, level=0):
 def main():
     rpacknames = ['pcalg']
     RF.import_R_library(rpacknames)
+    global avg_auc
 
-    from os.path import isfile, join
-    mypath = 'C:/Users/admin-mas/Documents/Causality/data/binary_data/'
-    # filenames = [f for f in listdir(mypath) if isfile(join(mypath, f))]
-    filenames = ['CollegeDistanceData-binary.csv']
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-f', action='store', dest='filename',
+                        help='data set file')
+    parser.add_argument('-m', action='store', dest='method', default='MT-PC',
+                        help='prediction method')
+    parser.add_argument('-l', action='store', dest='max_level', default=2,
+                        help='the max level of the tree')
+    parser.add_argument('-t', action='store', dest='test_size', default=.2,
+                        help='the ratio of testing data')
+    args, unknown = parser.parse_known_args()
+    filename = args.filename
+    
+    if filename: # explorer
+        method = args.method
+        max_level = args.max_level
+        test_size = args.test_size
 
-    max_level = 2
-    test_size = .2
-    methods = ['logit', 'DT', 'LMT', 'MT-PC']
-    types = ['Gini', 'knockout', 'coeff']  #
-    # filename = join(mypath, 'CollegeDistanceData-binary.csv')
-    for filename in filenames:
-        print('=================================', filename)
-
-        df = pd.read_csv(join(mypath, filename))
+        df = pd.read_csv(filename)
         attributes = df.columns[:-1]
         label = df.columns[-1]
         df_train, df_test = train_test_split(df, test_size=test_size, random_state=1)
-
-        # baseline = Baeseline(df_train, df_test, attributes, label)
-        # if 'logit' in methods:
-        #     print('logit - AUC:', baseline.logit())
-        # if 'DT' in methods:
-        #     print('DT - AUC:', baseline.DT())
-        # if 'LMT' in methods:
-        #     print('LMT - AUC:', baseline.LMT())
-
         df_train, df_val = train_test_split(df_train, test_size=test_size, random_state=1)
-        if 'MT-PC' in methods:
-            for type in types:
-                global avg_auc
+
+        baseline = Baeseline(df_train, df_test, attributes, label)
+        if 'logit' == method:
+            print('logit - AUC:', baseline.logit())
+        if 'DT' == method:
+            print('DT - AUC:', baseline.DT())
+        if 'LMT' == method:
+            print('LMT - AUC:', baseline.LMT())
+        if 'MT-PC' == method:
+            for type in ['Gini', 'knockout', 'coeff']:
                 avg_auc = 0
                 print('\n------------ MT-PC', type, '----------------------')
                 root = Node()
@@ -336,7 +340,46 @@ def main():
                 print('attr;\t\tPC;\t\tInSample AUC;\t\tOutOfSample Size;\t\tOutOfSample AUC')
                 print_tree(root, df_test, label)
                 print(avg_auc, df_test.shape)
-                print('MT_PC', type, '- AUC:', avg_auc/len(df_test))
+                print('MT_PC', type, '- AUC:', avg_auc / len(df_test))
+
+    else: # experiments
+        from os.path import isfile, join
+        mypath = '../../Documents/Causality/data/binary_data/'
+        # filenames = [f for f in listdir(mypath) if isfile(join(mypath, f))]
+        filenames = ['CollegeDistanceData-binary.csv']
+
+        max_level = 2
+        test_size = .2
+        methods = ['logit', 'DT', 'LMT', 'MT-PC']
+        types = ['Gini', 'knockout', 'coeff']  #
+        # filename = join(mypath, 'CollegeDistanceData-binary.csv')
+        for filename in filenames:
+            print('=================================', filename)
+
+            df = pd.read_csv(join(mypath, filename))
+            attributes = df.columns[:-1]
+            label = df.columns[-1]
+            df_train, df_test = train_test_split(df, test_size=test_size, random_state=1)
+
+            # baseline = Baeseline(df_train, df_test, attributes, label)
+            # if 'logit' in methods:
+            #     print('logit - AUC:', baseline.logit())
+            # if 'DT' in methods:
+            #     print('DT - AUC:', baseline.DT())
+            # if 'LMT' in methods:
+            #     print('LMT - AUC:', baseline.LMT())
+
+            df_train, df_val = train_test_split(df_train, test_size=test_size, random_state=1)
+            if 'MT-PC' in methods:
+                for type in types:
+                    avg_auc = 0
+                    print('\n------------ MT-PC', type, '----------------------')
+                    root = Node()
+                    build_tree(root, df_train, df_val, df_test, attributes, label, type, max_level)
+                    print('attr;\t\tPC;\t\tInSample AUC;\t\tOutOfSample Size;\t\tOutOfSample AUC')
+                    print_tree(root, df_test, label)
+                    print(avg_auc, df_test.shape)
+                    print('MT_PC', type, '- AUC:', avg_auc/len(df_test))
 
 
 def initialize():
