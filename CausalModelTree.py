@@ -8,6 +8,20 @@ from TreeCriteria import TreeCriteria
 from sklearn.linear_model import LogisticRegression
 
 class Node(object):
+    '''
+    node of a tree
+    attr                attribute, string
+    thres               threshold to best split data
+    parent              parent node of current node
+    left                left child
+    right               right child
+    leaf                is a leaf node
+    predict_label       predicted label, if a leaf
+    predict_attr        selected predictive attributes
+    model               model to predict outcome
+    size                testing data size
+    AUC                 AUC on validation data
+    '''
     def __init__(self):
         self.attr = None
         self.thres = None
@@ -27,18 +41,31 @@ class Node(object):
               '; Predictive attributes: ', self.predict_attr)
 
 
-def value_in_index(alist, a, vlist):
-    assert len(alist) == len(vlist), 'different length of alist and vlist'
+def value_in_dict(dict, key):
+    '''
+    return value of the key, if key does not exist return 0
+    :param dict:    dictionary
+    :param key:     key
+    :return:        value
+    '''
     try:
-        return vlist[alist.index(a)]
+        return dict[key]
     except:
         return 0
-
 
 
 # Chooses the attribute and its threshold with the highest info gain
 # from the set of attributes
 def choose_attr(df_train, df_val, attributes, attr_label, type):
+    '''
+    choose attribtue to split data
+    :param df_train:            training data, pandas data frame
+    :param df_val:              validation data, pandas data frame
+    :param attributes:          attributes, list of strings
+    :param attr_label:          label attribute, string
+    :param type:                criteria to build causal model tree
+    :return:                    best attribute and threshold
+    '''
     max_info_gain = float("-inf")
     max_coeff_diff = float("-inf")
     max_auc_diff = float("-inf")
@@ -80,13 +107,18 @@ def choose_attr(df_train, df_val, attributes, attr_label, type):
                 df_val_l = df_val[df_val[attr] < thres]
                 df_val_h = df_val[df_val[attr] > thres]
                 pcs_l, model_l, auc_l = logit_PC(df_train_l, df_val_l, attr_label)
-                coef_l = model_l.coef_ if pcs_l else [[]]
                 pcs_h, model_h, auc_h = logit_PC(df_train_h, df_val_h, attr_label)
-                coef_h = model_h.coef_ if pcs_h else [[]]
+                coef_dict_l, coef_dict_h = {}, {}
+                if pcs_l:
+                    for p, c in zip(pcs_l, model_l.coef_[0]):
+                        coef_dict_l[p] = c
+                if pcs_h:
+                    for p, c in zip(pcs_h, model_h.coef_[0]):
+                        coef_dict_h[p] = c
                 coeff_diff = 0
                 for pc in set(pcs_l).union(set(pcs_h)):
-                    coeff_diff += abs(value_in_index(pcs_l, pc, coef_l[0]) -
-                                      value_in_index(pcs_h, pc, coef_h[0]))
+                    coeff_diff += abs(value_in_dict(coef_dict_l, pc) -
+                                      value_in_dict(coef_dict_h, pc))
                 if coeff_diff > max_coeff_diff:
                     max_coeff_diff = coeff_diff
                     best_attr = attr
@@ -98,6 +130,13 @@ def choose_attr(df_train, df_val, attributes, attr_label, type):
 
 
 def logit_PC(df_train, df_test, attr_label):
+    '''
+    logistic regression with PC members only
+    :param df_train:        training data, pandas data frame
+    :param df_test:         testing data, pandas data frame
+    :param attr_label:      label attribute, string
+    :return:                PC members, logistic regression model and AUC
+    '''
     pcs = RF.learnPC_R(df_train, attr_label)
     if pcs:
         model = LogisticRegression().fit(df_train[pcs], df_train[attr_label])
@@ -112,15 +151,31 @@ def logit_PC(df_train, df_test, attr_label):
 
 
 
-# Returns the number of positive and negative data
 def num_values(df, attr):
+    '''
+    Returns the number of positive and negative data
+    :param df:          data frame
+    :param attr:        attribute, string
+    :return:            numbers of values
+    '''
     p_df = df[df[attr] == 1]
     n_df = df[df[attr] == 0]
     return p_df.shape[0], n_df.shape[0]
 
-# Builds the Decision Tree based on training data, attributes to train on,
-# and a prediction attribute
-def build_tree(now_tree, df_train, df_val, df_test, cols, attr_label, type, max_level=5, level=0):
+
+def build_tree(now_tree, df_train, df_val, df_test, attributes, attr_label, type, max_level=5, level=0):
+    '''
+    Builds the Causal Model Tree based on training data, attributes to train on, and a prediction attribute
+    :param now_tree:            tree
+    :param df_train:            training data
+    :param df_val:              validation data
+    :param df_test:             testing data
+    :param attributes:          attributes
+    :param attr_label:          label attribute
+    :param type:                criteria
+    :param max_level:           max level of the tree
+    :param level:               starting level
+    '''
     # Get the number of positive and negative examples in the training data
     df_train_val = pd.concat([df_train, df_val], ignore_index=True)
     # treeCriteria = TreeCriteria(df_train_val, attr, attr_label)
@@ -149,7 +204,7 @@ def build_tree(now_tree, df_train, df_val, df_test, cols, attr_label, type, max_
     else:
         # Determine attribute and its threshold value with the highest
         # information gain
-        best_attr, threshold = choose_attr(df_train, df_val, cols, attr_label, type)
+        best_attr, threshold = choose_attr(df_train, df_val, attributes, attr_label, type)
         if best_attr:
             # Create internal tree node based on attribute and it's threshold
             now_tree.attr = best_attr
@@ -168,13 +223,13 @@ def build_tree(now_tree, df_train, df_val, df_test, cols, attr_label, type, max_
                 tree = Node()
                 tree.parent = now_tree
                 now_tree.left = tree
-                left = build_tree(tree, df_train_l, df_val_l, df_test_l, cols, attr_label, type, max_level, level + 1)
+                build_tree(tree, df_train_l, df_val_l, df_test_l, attributes, attr_label, type, max_level, level + 1)
 
             if not now_tree.leaf:
                 tree = Node()
                 tree.parent = now_tree
                 now_tree.right = tree
-                right = build_tree(tree, df_train_h, df_val_h, df_test_h, cols, attr_label, type, max_level, level + 1)
+                build_tree(tree, df_train_h, df_val_h, df_test_h, attributes, attr_label, type, max_level, level + 1)
         else:
             now_tree.attr = None
             now_tree.thres = None
