@@ -5,6 +5,6 @@ Build a causal model tree, an explainable model, for prediction. Use causality-b
 pip install -r requirements.txt
 
 # Usage
-python CausalModelTree.py -f "filename.csv" -m MT-PC -l 2 -t .2
+example: python CausalModelTree.py -f "filename.csv" -m MT-PC -l 2 -t .2
 
 (-h, see the help messages)
