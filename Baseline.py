@@ -1,13 +1,7 @@
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, accuracy_score
 import numpy as np
-import pandas as pd
-from weka.core.dataset import Instances, Instance, Attribute
+from DF2Instances import DF2Instances
 from weka.classifiers import Classifier
-import weka.core.jvm as jvm
-import warnings
-
-warnings.filterwarnings("ignore", category=FutureWarning)
 
 def evaluate_auc(y_true, y_pred):
     '''
@@ -17,37 +11,16 @@ def evaluate_auc(y_true, y_pred):
     :return:
     '''
 
-    if len(np.unique(y_pred)) == 1 or len(np.unique(y_true)) == 1:  # bug in roc_auc_score
-        auc = accuracy_score(y_true, y_pred)
+    # y_pred = [1-y if x==1 else y for x,y in zip(y_true,y_pred)]
+    if len(np.unique(y_pred)) == 1:  # bug in roc_auc_score
+        y_pred[0] = 1 if y_pred[0]==0 else 0
+        auc = roc_auc_score(y_true, y_pred)
+    elif len(np.unique(y_true)) == 1:
+        y_true[0] = 1 if y_true[0]==0 else 0
+        auc = roc_auc_score(y_true, y_pred)
     else:
         auc = roc_auc_score(y_true, y_pred)
     return auc
-
-
-def df_to_instances(df, relation, attr_label):
-    '''
-    transform pandas data frame to arff style data
-    :param df:              panda data frame
-    :param relation:        relation, string
-    :param attr_label:      label attribute, string
-    :return:                arff style data
-    '''
-
-    atts = []
-    for col in df.columns:
-        if col != attr_label:
-            att = Attribute.create_numeric(col)
-        else:
-            att = Attribute.create_nominal(col, ['0', '1'])
-        atts.append(att)
-    nrow = len(df)
-    result = Instances.create_instances(relation, atts, nrow)
-    # data
-    for i in range(nrow):
-        inst = Instance.create_instance(df.iloc[i].astype('float64').to_numpy().copy(order='C'))
-        result.add_instance(inst)
-
-    return result
 
 class Baeseline(object):
     '''
@@ -64,36 +37,56 @@ class Baeseline(object):
         self.attributes = attributes
         self.attr_label = attr_label
 
+        df2Instances = DF2Instances(df_train, 'train', attr_label)
+        self.data_train = df2Instances.df_to_instances()
+        self.data_train.class_is_last()  # set class attribute
+        df2Instances = DF2Instances(df_test, 'test', attr_label)
+        self.data_test = df2Instances.df_to_instances()
+        self.data_test.class_is_last()  # set class attribute
+
 
     def logit(self):
-        model = LogisticRegression().fit(self.df_train[self.attributes], self.df_train[self.attr_label])
-        pred = model.predict(self.df_test[self.attributes])
-        auc = evaluate_auc(self.df_test[self.attr_label].values.tolist(), pred)
+        model = Classifier(classname="weka.classifiers.functions.Logistic")
+        model.build_classifier(self.data_train)
+        preds = []
+        for index, inst in enumerate(self.data_test):
+            preds.append(model.distribution_for_instance(inst)[1])
+        auc = evaluate_auc(self.df_test[self.attr_label].values.tolist(), preds)
+
+        ### scikit learn logit
+        # from sklearn.linear_model import LogisticRegression
+        # model = LogisticRegression().fit(self.df_train[self.attributes], self.df_train[self.attr_label])
+        # pred = model.predict_proba(self.df_test[self.attributes])
+        # pred = [x[1] for x in pred]
+        # auc = evaluate_auc(self.df_test[self.attr_label].values.tolist(), pred)
         return auc
 
 
     def DT(self):
-        from sklearn.tree import DecisionTreeClassifier
-        model = DecisionTreeClassifier().fit(self.df_train[self.attributes], self.df_train[self.attr_label])
-        pred = model.predict(self.df_test[self.attributes])
-        auc = evaluate_auc(self.df_test[self.attr_label].values.tolist(), pred)
+        model = Classifier(classname="weka.classifiers.trees.J48")
+        model.build_classifier(self.data_train)
+        preds = []
+        for index, inst in enumerate(self.data_test):
+            preds.append(model.distribution_for_instance(inst)[1])
+        auc = evaluate_auc(self.df_test[self.attr_label].values.tolist(), preds)
+
+        ### scikit learn decision tree
+        # from sklearn.tree import DecisionTreeClassifier
+        # model = DecisionTreeClassifier().fit(self.df_train[self.attributes], self.df_train[self.attr_label])
+        # pred = model.predict_proba(self.df_test[self.attributes])
+        # pred = [x[1] for x in pred]
+        # auc = evaluate_auc(self.df_test[self.attr_label].values.tolist(), pred)
         return auc
 
 
     def LMT(self):
-        jvm.start()
-        data_train = df_to_instances(self.df_train, 'train', self.attr_label)
-        data_train.class_is_last()  # set class attribute
         model = Classifier(classname="weka.classifiers.trees.LMT")
-        model.build_classifier(data_train)
+        model.build_classifier(self.data_train)
         print(model)
 
-        data_test = df_to_instances(self.df_test, 'test', self.attr_label)
-        data_test.class_is_last()  # set class attribute
         preds = []
-        for index, inst in enumerate(data_test):
-            preds.append(model.classify_instance(inst))
-        jvm.stop()
+        for index, inst in enumerate(self.data_test):
+            preds.append(model.distribution_for_instance(inst)[1])
         auc = evaluate_auc(self.df_test[self.attr_label].values.tolist(), preds)
         return auc
 

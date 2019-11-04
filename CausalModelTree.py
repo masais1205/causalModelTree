@@ -1,12 +1,16 @@
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score, accuracy_score
+from weka.classifiers import Classifier
+from weka.core import jvm
+
 from Baseline import Baeseline, evaluate_auc
 import RFunctions as RF
+from DF2Instances import DF2Instances
 from TreeCriteria import TreeCriteria
-from sklearn.linear_model import LogisticRegression
 import argparse
+import warnings
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 class Node(object):
     '''
@@ -110,6 +114,7 @@ def choose_attr(df_train, df_val, attributes, attr_label, type):
                 pcs_l, model_l, auc_l = logit_PC(df_train_l, df_val_l, attr_label)
                 pcs_h, model_h, auc_h = logit_PC(df_train_h, df_val_h, attr_label)
                 coef_dict_l, coef_dict_h = {}, {}
+                print(model_l.coef_)
                 if pcs_l:
                     for p, c in zip(pcs_l, model_l.coef_[0]):
                         coef_dict_l[p] = c
@@ -140,12 +145,26 @@ def logit_PC(df_train, df_test, attr_label):
     '''
     pcs = RF.learnPC_R(df_train, attr_label)
     if pcs:
-        model = LogisticRegression().fit(df_train[pcs], df_train[attr_label])
-        pred = model.predict(df_test[pcs])
+        # model = LogisticRegression().fit(df_train[pcs], df_train[attr_label])
+        # pred = model.predict_proba(df_test[pcs])
+        # pred = [x[1] for x in pred]
+        # auc = evaluate_auc(df_test[attr_label].values.tolist(), pred)
 
-        auc = evaluate_auc(df_test[attr_label].values.tolist(), pred)
-        # fpr, tpr, thresholds = metrics.roc_curve(df_test[attr_label].values.tolist(), pred, pos_label=2)
-        # print(metrics.auc(fpr, tpr))
+        df2Instances = DF2Instances(df_train, 'train', attr_label)
+        data_train = df2Instances.df_to_instances()
+        data_train.class_is_last()  # set class attribute
+        model = Classifier(classname="weka.classifiers.functions.Logistic")
+        model.build_classifier(data_train)
+
+        df2Instances = DF2Instances(df_test, 'test', attr_label)
+        data_test = df2Instances.df_to_instances()
+        data_test.class_is_last()  # set class attribute
+
+        preds = []
+        for index, inst in enumerate(data_test):
+            preds.append(model.distribution_for_instance(inst)[1])
+        auc = evaluate_auc(df_test[attr_label].values.tolist(), preds)
+
         return pcs, model, auc
     else:
         return pcs, None, None
@@ -270,21 +289,35 @@ def print_tree(root, df_test, attr_label, level=0):
     global avg_auc
     print(level * '|\t', end='')
     if root.leaf:
-        pred = root.model.predict(df_test[root.predict_attr])
-        if len(np.unique(pred)) == 1 or len(
-                np.unique(df_test[attr_label].values.tolist())) == 1:  # bug in roc_auc_score
-            auc = accuracy_score(df_test[attr_label].values.tolist(), pred)
-        else:
-            auc = roc_auc_score(df_test[attr_label].values.tolist(), pred)
+        # pred = root.model.predict(df_test[root.predict_attr])
+        # if len(np.unique(pred)) == 1 or len(
+        #         np.unique(df_test[attr_label].values.tolist())) == 1:  # bug in roc_auc_score
+        #     auc = accuracy_score(df_test[attr_label].values.tolist(), pred)
+        # else:
+        #     auc = roc_auc_score(df_test[attr_label].values.tolist(), pred)
+        df2Instances = DF2Instances(df_test, 'test', attr_label)
+        data_test = df2Instances.df_to_instances()
+        data_test.class_is_last()  # set class attribute
+        preds = []
+        for index, inst in enumerate(data_test):
+            preds.append(root.model.distribution_for_instance(inst)[1])
+        auc = evaluate_auc(df_test[attr_label].values.tolist(), preds)
         print('leaf', ';', root.predict_attr, ';', root.auc, ';', root.size, ';', auc)
         avg_auc += auc * root.size
     else:
-        pred = root.model.predict(df_test[root.predict_attr])
-        if len(np.unique(pred)) == 1 or len(
-                np.unique(df_test[attr_label].values.tolist())) == 1:  # bug in roc_auc_score
-            auc = accuracy_score(df_test[attr_label].values.tolist(), pred)
-        else:
-            auc = roc_auc_score(df_test[attr_label].values.tolist(), pred)
+        # pred = root.model.predict(df_test[root.predict_attr])
+        # if len(np.unique(pred)) == 1 or len(
+        #         np.unique(df_test[attr_label].values.tolist())) == 1:  # bug in roc_auc_score
+        #     auc = accuracy_score(df_test[attr_label].values.tolist(), pred)
+        # else:
+        #     auc = roc_auc_score(df_test[attr_label].values.tolist(), pred)
+        df2Instances = DF2Instances(df_test, 'test', attr_label)
+        data_test = df2Instances.df_to_instances()
+        data_test.class_is_last()  # set class attribute
+        preds = []
+        for index, inst in enumerate(data_test):
+            preds.append(root.model.distribution_for_instance(inst)[1])
+        auc = evaluate_auc(df_test[attr_label].values.tolist(), preds)
         print(root.attr, ';', root.predict_attr, ';', root.auc, ';', root.size, ';', auc)
         # root.toString()
 
@@ -312,7 +345,7 @@ def main():
                         help='the ratio of testing data')
     args, unknown = parser.parse_known_args()
     filename = args.filename
-    
+
     if filename: # explorer
         method = args.method
         max_level = args.max_level
@@ -346,7 +379,7 @@ def main():
         from os.path import isfile, join
         mypath = '../../Documents/Causality/data/binary_data/'
         # filenames = [f for f in listdir(mypath) if isfile(join(mypath, f))]
-        filenames = ['CollegeDistanceData-binary.csv']
+        filenames = ['germand.csv']
 
         max_level = 2
         test_size = .2
@@ -361,13 +394,15 @@ def main():
             label = df.columns[-1]
             df_train, df_test = train_test_split(df, test_size=test_size, random_state=1)
 
-            # baseline = Baeseline(df_train, df_test, attributes, label)
-            # if 'logit' in methods:
-            #     print('logit - AUC:', baseline.logit())
-            # if 'DT' in methods:
-            #     print('DT - AUC:', baseline.DT())
-            # if 'LMT' in methods:
-            #     print('LMT - AUC:', baseline.LMT())
+            # data = pd.read_csv('../../Desktop/test.csv')
+            # print(evaluate_auc(data['f'].values.tolist(), data['g'].values.tolist()))
+            baseline = Baeseline(df_train, df_test, attributes, label)
+            if 'logit' in methods:
+                print('logit - AUC:', baseline.logit())
+            if 'DT' in methods:
+                print('DT - AUC:', baseline.DT())
+            if 'LMT' in methods:
+                print('LMT - AUC:', baseline.LMT())
 
             df_train, df_val = train_test_split(df_train, test_size=test_size, random_state=1)
             if 'MT-PC' in methods:
@@ -378,7 +413,6 @@ def main():
                     build_tree(root, df_train, df_val, df_test, attributes, label, type, max_level)
                     print('attr;\t\tPC;\t\tInSample AUC;\t\tOutOfSample Size;\t\tOutOfSample AUC')
                     print_tree(root, df_test, label)
-                    print(avg_auc, df_test.shape)
                     print('MT_PC', type, '- AUC:', avg_auc/len(df_test))
 
 
@@ -392,4 +426,10 @@ def initialize():
 initialize()
 
 if __name__ == '__main__':
-    main()
+    try:
+        jvm.start()
+        main()
+    except Exception as e:
+        print(traceback.format_exc())
+    finally:
+        jvm.stop()
