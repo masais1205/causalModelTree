@@ -1,3 +1,4 @@
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score, accuracy_score
 import numpy as np
 from DF2Instances import DF2Instances
@@ -12,14 +13,13 @@ def evaluate_auc(y_true, y_pred):
     '''
 
     # y_pred = [1-y if x==1 else y for x,y in zip(y_true,y_pred)]
+    if len(y_true) == 1 or len(y_true) == 0:
+        return 1
     if len(np.unique(y_pred)) == 1:  # bug in roc_auc_score
         y_pred[0] = 1 if y_pred[0]==0 else 0
-        auc = roc_auc_score(y_true, y_pred)
-    elif len(np.unique(y_true)) == 1:
+    if len(np.unique(y_true)) == 1:
         y_true[0] = 1 if y_true[0]==0 else 0
-        auc = roc_auc_score(y_true, y_pred)
-    else:
-        auc = roc_auc_score(y_true, y_pred)
+    auc = roc_auc_score(y_true, y_pred)
     return auc
 
 class Baeseline(object):
@@ -91,14 +91,14 @@ class Baeseline(object):
         return auc
 
         ### self-implemented LMT
-        # from lmt import LinearModelTree
+        # from LMT import LinearModelTree
         # from sklearn.metrics import mean_squared_error
-
+        #
         # def fit_linear_model(x, y):
         #     lr = LogisticRegression()
         #     lr.fit(x, y)
         #     return lr
         # lmt = LinearModelTree(100, fit_linear_model, min_split_improvement=10)
-        # lmt.build_tree(df_train[attributes].values, df_train[attributes], df_train[attr_label].values)
-        # pred = lmt.predict(df_test[attributes].values, df_test[attributes])
-        # return roc_auc_score(df_test[attr_label].values.tolist(), pred)
+        # lmt.build_tree(self.df_train[self.attributes].values, self.df_train[self.attributes], self.df_train[self.attr_label].values)
+        # pred = lmt.predict(self.df_test[self.attributes].values, self.df_test[self.attributes])
+        # return evaluate_auc(self.df_test[self.attr_label].values.tolist(), pred)

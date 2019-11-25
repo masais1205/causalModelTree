@@ -1,15 +1,9 @@
 import math
 import numpy as np
+from sklearn.linear_model import Ridge
 
 
 class LinearModelTree:
-    '''
-    build linear model tree
-    :param min_node_size            minimal node size
-    :param node_model_fit_func      model fit function
-    :param min_split_improvement    minimal split improvement
-    '''
-
     def __init__(self, min_node_size, node_model_fit_func, min_split_improvement=0):
         self.min_node_size = min_node_size
         self.node_model_fit_func = node_model_fit_func
@@ -24,6 +18,7 @@ class LinearModelTree:
             print(x)
             print(lm.miles_model.coef_)
             print(lm.metro_model.coef_)
+            1/0
         return predictions, lm
 
     def convert_df_to_ndarray(self, X):
@@ -71,13 +66,6 @@ class LinearModelTree:
 
 
 class Node:
-    '''
-    nodes of a tree
-    :param feature_idx      feature index
-    :param pivot_value      pivot value
-    :param lm               linear regression model
-    '''
-
     def __init__(self, feature_idx, pivot_value, lm):
         self.feature_idx = feature_idx
         self.pivot_value = pivot_value

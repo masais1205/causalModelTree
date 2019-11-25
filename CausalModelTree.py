@@ -1,16 +1,15 @@
+from os import listdir
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from weka.classifiers import Classifier
 from weka.core import jvm
-
 from Baseline import Baeseline, evaluate_auc
 import RFunctions as RF
 from DF2Instances import DF2Instances
 from TreeCriteria import TreeCriteria
 import argparse
 import warnings
-
-warnings.filterwarnings("ignore", category=FutureWarning)
+import inspect
 
 class Node(object):
     '''
@@ -57,6 +56,13 @@ def value_in_dict(dict, key):
         return dict[key]
     except:
         return 0
+
+
+def string2float(aStr, attrs):
+    coef = []
+    for i in range(len(attrs)-1):
+        coef.append(float(aStr[aStr.index(attrs[i]) + len(attrs[i]): aStr.index(attrs[i+1])]))
+    return coef
 
 
 # Chooses the attribute and its threshold with the highest info gain
@@ -114,12 +120,17 @@ def choose_attr(df_train, df_val, attributes, attr_label, type):
                 pcs_l, model_l, auc_l = logit_PC(df_train_l, df_val_l, attr_label)
                 pcs_h, model_h, auc_h = logit_PC(df_train_h, df_val_h, attr_label)
                 coef_dict_l, coef_dict_h = {}, {}
-                print(model_l.coef_)
+
+                s_l = str(dict(inspect.getmembers(model_l.__delattr__))['__self__'])
+                coef_l = string2float(s_l, pcs_l+['Intercept'])
+                s_h = str(dict(inspect.getmembers(model_h.__delattr__))['__self__'])
+                coef_h = string2float(s_h, pcs_h+['Intercept'])
+
                 if pcs_l:
-                    for p, c in zip(pcs_l, model_l.coef_[0]):
+                    for p, c in zip(pcs_l, coef_l):
                         coef_dict_l[p] = c
                 if pcs_h:
-                    for p, c in zip(pcs_h, model_h.coef_[0]):
+                    for p, c in zip(pcs_h, coef_h):
                         coef_dict_h[p] = c
                 coeff_diff = 0
                 for pc in set(pcs_l).union(set(pcs_h)):
@@ -150,13 +161,13 @@ def logit_PC(df_train, df_test, attr_label):
         # pred = [x[1] for x in pred]
         # auc = evaluate_auc(df_test[attr_label].values.tolist(), pred)
 
-        df2Instances = DF2Instances(df_train, 'train', attr_label)
+        df2Instances = DF2Instances(df_train[pcs+[attr_label]], 'train', attr_label)
         data_train = df2Instances.df_to_instances()
         data_train.class_is_last()  # set class attribute
         model = Classifier(classname="weka.classifiers.functions.Logistic")
         model.build_classifier(data_train)
 
-        df2Instances = DF2Instances(df_test, 'test', attr_label)
+        df2Instances = DF2Instances(df_test[pcs+[attr_label]], 'test', attr_label)
         data_test = df2Instances.df_to_instances()
         data_test.class_is_last()  # set class attribute
 
@@ -295,14 +306,16 @@ def print_tree(root, df_test, attr_label, level=0):
         #     auc = accuracy_score(df_test[attr_label].values.tolist(), pred)
         # else:
         #     auc = roc_auc_score(df_test[attr_label].values.tolist(), pred)
-        df2Instances = DF2Instances(df_test, 'test', attr_label)
+        df2Instances = DF2Instances(df_test[root.predict_attr + [attr_label]], 'test', attr_label)
         data_test = df2Instances.df_to_instances()
         data_test.class_is_last()  # set class attribute
         preds = []
         for index, inst in enumerate(data_test):
             preds.append(root.model.distribution_for_instance(inst)[1])
         auc = evaluate_auc(df_test[attr_label].values.tolist(), preds)
-        print('leaf', ';', root.predict_attr, ';', root.auc, ';', root.size, ';', auc)
+        print('leaf', ';', root.predict_attr, ';',
+        string2float(str(dict(inspect.getmembers(root.model.__delattr__))['__self__']), root.predict_attr + ['Intercept']),
+              ';', root.auc, ';', root.size, ';', auc)
         avg_auc += auc * root.size
     else:
         # pred = root.model.predict(df_test[root.predict_attr])
@@ -311,14 +324,16 @@ def print_tree(root, df_test, attr_label, level=0):
         #     auc = accuracy_score(df_test[attr_label].values.tolist(), pred)
         # else:
         #     auc = roc_auc_score(df_test[attr_label].values.tolist(), pred)
-        df2Instances = DF2Instances(df_test, 'test', attr_label)
+        df2Instances = DF2Instances(df_test[root.predict_attr + [attr_label]], 'test', attr_label)
         data_test = df2Instances.df_to_instances()
         data_test.class_is_last()  # set class attribute
         preds = []
         for index, inst in enumerate(data_test):
             preds.append(root.model.distribution_for_instance(inst)[1])
         auc = evaluate_auc(df_test[attr_label].values.tolist(), preds)
-        print(root.attr, ';', root.predict_attr, ';', root.auc, ';', root.size, ';', auc)
+        print(root.attr, ';', root.predict_attr, ';',
+        string2float(str(dict(inspect.getmembers(root.model.__delattr__))['__self__']), root.predict_attr + ['Intercept']),
+              ';', root.auc, ';', root.size, ';', auc)
         # root.toString()
 
     if root.left:
@@ -377,13 +392,13 @@ def main():
 
     else: # experiments
         from os.path import isfile, join
-        mypath = '../../Documents/Causality/data/binary_data/'
+        mypath = '../../Documents/Causality/data/synthetic/'
         # filenames = [f for f in listdir(mypath) if isfile(join(mypath, f))]
-        filenames = ['germand.csv']
+        filenames = ['test_x_y.csv']
 
         max_level = 2
         test_size = .2
-        methods = ['logit', 'DT', 'LMT', 'MT-PC']
+        methods = ['logit', 'DT', 'LMT', 'MT-PC'] #
         types = ['Gini', 'knockout', 'coeff']  #
         # filename = join(mypath, 'CollegeDistanceData-binary.csv')
         for filename in filenames:
@@ -394,13 +409,11 @@ def main():
             label = df.columns[-1]
             df_train, df_test = train_test_split(df, test_size=test_size, random_state=1)
 
-            # data = pd.read_csv('../../Desktop/test.csv')
-            # print(evaluate_auc(data['f'].values.tolist(), data['g'].values.tolist()))
             baseline = Baeseline(df_train, df_test, attributes, label)
             if 'logit' in methods:
                 print('logit - AUC:', baseline.logit())
             if 'DT' in methods:
-                print('DT - AUC:', baseline.DT())
+                print('J48 - AUC:', baseline.DT())
             if 'LMT' in methods:
                 print('LMT - AUC:', baseline.LMT())
 
@@ -426,6 +439,7 @@ def initialize():
 initialize()
 
 if __name__ == '__main__':
+    warnings.filterwarnings("ignore", category=FutureWarning)
     try:
         jvm.start()
         main()
