@@ -1,5 +1,5 @@
 weka==1.0.6
 rpy2==2.9.5
 pandas==0.25.1
-numpy==1.17.1
+numpy==1.22.0
 scikit_learn==0.21.3
